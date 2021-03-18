@@ -1,0 +1,34 @@
+.x-form {
+  &__field {
+    margin-bottom: 15px;
+
+    &--error {
+      color: red;
+    }
+    &--success {
+      color: green;
+    }
+  }
+  &__input {
+    &--text {
+      width: 100%;
+      height: 30px;
+      padding: 0 15px;
+      border: none;
+      border-radius: 0;
+      background-color: rgba(black, 0.1);
+    }
+  }
+  &__input-file {
+    display: block;
+  }
+  &__btns {
+
+  }
+  &__btn {
+
+    &-submit {
+
+    }
+  }
+}

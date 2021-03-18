@@ -1,0 +1,25 @@
+*:focus,
+*:before:focus,
+*:after:focus {
+  outline: none; }
+
+body {
+  font-family: JetBrains Mono, 'Courier New', monospace; }
+
+.x-form__field {
+  margin-bottom: 15px; }
+
+.x-form__input {
+  width: 100%;
+  height: 30px;
+  padding: 0 15px;
+  border: none;
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0.1); }
+
+.x-form__input-file {
+  display: block; }
+
+.container {
+  width: 700px;
+  margin: 0 auto; }

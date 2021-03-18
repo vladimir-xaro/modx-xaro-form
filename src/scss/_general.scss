@@ -1,0 +1,13 @@
+*,
+*:before,
+*:after {
+  box-sizing: border-box;
+  
+  &:focus {
+    outline: none;
+  }
+}
+
+body {
+  font-family: JetBrains Mono, 'Courier New', monospace;
+}

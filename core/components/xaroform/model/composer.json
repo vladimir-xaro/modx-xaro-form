@@ -1,0 +1,19 @@
+{
+  "name": "xaro/form",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Vladimir Slavgorodskiy",
+      "email": "vladimir.xaro@gmail.com"
+    }
+  ],
+  "require": {
+    "imangazaliev/didom": "^1.16"
+  },
+  "autoload": {
+    "psr-4": {
+      "Xaro\\Form\\": "src/"
+    }
+  }
+}
