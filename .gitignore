@@ -1,6 +1,7 @@
 /assets/components/*
 !/assets/components/xaroform/
 /connectors
+/core/*.access
 /core/cache/
 /core/components/*
 /core/config/
