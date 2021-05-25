@@ -37,13 +37,24 @@ export interface I_XaroFormConfig extends I_XaroFormConstructorConfig {
   
 }
 
+export interface XaroFormPlugin {
+  init?(form: I_XaroForm);
+  beforeSubmit?(form: I_XaroForm);
+  afterSubmit?(form: I_XaroForm);
+}
+
 // Field
 export interface I_Field {
   form:       I_XaroForm;
   el:         HTMLElement;
   inputs:     MicroDOM<InputElement>;
   subInputs?: MicroDOM<HTMLOptionElement>;
-  errors:     { [code: string]: HTMLElement };
+  errors: {
+    [code: string]: {
+      msg: string;
+      el?: HTMLElement;
+    }
+  };
   type:       string;
   name:       string;
   isMultiple: boolean;
@@ -52,7 +63,7 @@ export interface I_Field {
   // getters
   value: FormDataEntryValue | FormDataEntryValue[] | null;
 
-  addError(code: string, msg: string): void;
+  addError(code: string|number, msg: string): void;
   removeError(code: string): void;
   clearErrors(): void;
 }

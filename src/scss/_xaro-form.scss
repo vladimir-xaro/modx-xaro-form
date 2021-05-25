@@ -8,6 +8,30 @@
     &--success {
       color: green;
     }
+
+    &-error {
+      display: block;
+      opacity: 0;
+      transition-duration: 750ms;
+      transform: translateX(-50px);
+
+      &--show{
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+  }
+  &__error {
+    display: block;
+    opacity: 0;
+    transition-duration: 750ms;
+    color: red;
+    transform: translateX(-50px);
+
+    &--show{
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
   &__input {
     &--text {

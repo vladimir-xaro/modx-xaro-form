@@ -1,24 +1,22 @@
 import EventEmitter from '@xaro/event-emitter';
-import $, { MicroDOM } from '@xaro/micro-dom';
-import { I_XaroForm, I_XaroFormInitializeConfig, I_XaroFormConstructorConfig, I_XaroFormConfig, I_Field, InputElement  } from 'src/types';
+import $, { MicroDOM, nextTick } from '@xaro/micro-dom';
+import { I_XaroForm, I_XaroFormInitializeConfig, I_XaroFormConstructorConfig, I_XaroFormConfig, I_Field, InputElement, XaroFormPlugin  } from 'src/types';
 import Validator from './Validator';
 import Field from './Field';
-import { camelToSnake, snakeToCamel } from './helpers';
-
-// const tmpValidatorMethods = [
-//   'required',
-//   'minLength',
-//   'maxLength',
-//   'password_confirm',
-//   'isNumber',
-//   'minValue',
-//   'maxValue',
-//   'email',
-// ];
+import { camelToSnake, difference, intersection, keys, snakeToCamel } from './helpers';
 
 export default class XaroForm implements I_XaroForm {
+  public static EventEmitter  = EventEmitter;
+  public static MicroDOM      = MicroDOM;
+
+  // object with all registered plugins
+  public static plugins: { [key: string]: XaroFormPlugin } = {};
+
   // all forms instances
   public static instances: { [key: string]: XaroForm[] } = {};
+
+  // forms amount
+  public static numbers: number = 0;
   
   // common forms config
   public static config: {
@@ -26,34 +24,85 @@ export default class XaroForm implements I_XaroForm {
     [key: string]: any;
   };
 
+  // custom validators
+  public static customValidators: { [key: string]: Function } = {};
+
   // event emitter
   public emitter: EventEmitter;
 
   // current form config
-  public config:  I_XaroFormConfig;
+  public config: I_XaroFormConfig;
 
   // fields elements with inputs
   public fields: { [key: string]: I_Field } = {};
 
+  // form buttons element (submit/reset/etc)
+  public btns: { [key: string]: Array<HTMLButtonElement | HTMLInputElement> } = {};
+
+  // other errors wrapper
+  public errorsEl?: HTMLElement;
+
+  // other errors object
   public errors: {
-    [key: string]: {
-      [key: string]: HTMLElement
+    [field_key: string]: {
+      [code: string]: {
+        msg: string,
+        el?: HTMLElement
+      }
     }
   } = {};
 
-  public static initialize(config: I_XaroFormInitializeConfig) {
+  // plugins for current instance
+  public plugins: {
+    list:   string[],
+    config: {}
+  } = {
+    list:   [],
+    config: {}
+  };
+
+  /**
+   * Registers plugin for XaroForm
+   * @param name string Plugin's name
+   * @param plugin XaroFormPlugin Plugin's object
+   */
+  public static addPlugin(name: string, plugin: XaroFormPlugin): void {
+    XaroForm.plugins[name] = plugin;
+  }
+
+  /**
+   * Removes plugin by name
+   * @param name string Plugin's name
+   */
+  public static removePlugin(name: string): void {
+    delete XaroForm.plugins[name];
+  }
+
+  /**
+   * Initialize all forms from config
+   * @param config I_XaroFormInitializeConfig
+   */
+  public static initialize(config: I_XaroFormInitializeConfig): void {
     XaroForm.config = config.common;
 
-    for (const key in config.forms) {
-      XaroForm.instances[key] = [];
-      const forms: MicroDOM<HTMLFormElement> = $(`${config.forms[key]['form_selector']}[data-form-action="${key}"]`);
-      for (const el of forms) {
-        XaroForm.instances[key].push(new XaroForm(Object.assign({}, config.forms[key], { el })));
+    if ((window as any).XaroFormPlugins) {
+      for (const key in (window as any).XaroFormPlugins) {
+        XaroForm.addPlugin(key, (window as any).XaroFormPlugins[key]);
       }
     }
 
-    
-    
+    for (const key in config.forms) {
+      XaroForm.instances[key] = [];
+      const forms: MicroDOM<HTMLFormElement> = $(`${config.forms[key]['form_selector']}[data-form-key="${key}"]`);
+      for (const el of forms) {
+        XaroForm.instances[key].push(new XaroForm(Object.assign({}, config.forms[key], {
+          el,
+          on: (window as any).XaroFormEvents || {}
+        })));
+        XaroForm.numbers++;
+      }
+    }
+
     // console.log(config, XaroForm.instances);
   }
 
@@ -61,6 +110,7 @@ export default class XaroForm implements I_XaroForm {
     this.emitter = new EventEmitter(config.on);
     this.config = config;
 
+    // Fields
     for (const el of $(this.config.el).get<HTMLElement>('.x-form__field')) {
       const inputs: MicroDOM<InputElement> = $(el).get<InputElement>('.x-form__input');
 
@@ -83,41 +133,28 @@ export default class XaroForm implements I_XaroForm {
       });
     }
 
+    // Buttons (submit/reset/etc)
+    let btn_i = 0;
+    for (const btn of $(this.config.el).get<HTMLButtonElement|HTMLInputElement>('.x-form__btn')) {
+      const type: string|null = btn.getAttribute('type');
+      if (type) {
+        if (type in this.btns) {
+          this.btns[type].push(btn);
+        } else {
+          this.btns[type] = [ btn ];
+        }
+      } else {
+        this.btns['undefined_' + btn_i] = [ btn ];
+        btn_i++;
+      }
+    }
+    this.lockBtns();
 
-    // console.log(this);
+    // Common errors wrapper el
+    const errorsEl = $(this.config.el).get<HTMLElement>('.x-form__errors');
+    this.errorsEl = errorsEl.length ? errorsEl[0] : undefined;
 
-    // initialize fields object property
-    // for (const input of $(this.config.el).get<HTMLInputElement>('.x-form__input')) {
-    //   const name: string | null = input.getAttribute('name');
-
-    //   if (name === null) {
-    //     continue;
-    //   }
-
-    //   let field: HTMLElement = input;
-    //   while (field.tagName !== 'FORM' && !field.classList.contains('x-form__field')) {
-    //     field = field.parentElement!;
-    //   }
-
-    //   if (field.tagName === 'FORM') {
-    //     continue;
-    //   }
-
-    //   // set field el data-field-name attr by input name attr
-    //   field.setAttribute('data-field-name', name);
-
-    //   // create errors container el and append to field el
-    //   const errors = document.createElement('div');
-    //   errors.classList.add('x-form__field-errors');
-    //   field.append(errors);
-
-    //   this.fields[name] = {
-    //     field,
-    //     input,
-    //     errors
-    //   };
-    // }
-
+    // Submit listener
     this.config.el.addEventListener('submit', e => {
       e.preventDefault();
 
@@ -125,6 +162,30 @@ export default class XaroForm implements I_XaroForm {
 
       return false;
     });
+
+
+    // plugins
+    const pluginKeys = keys(XaroForm.plugins);
+    if (this.config.plugins) {
+      let plugins: string[] = [];
+      for (let i = 0; i < this.config.plugins.length; i++) {
+        if (pluginKeys.includes(this.config.plugins[i])) {
+          plugins.push(this.config.plugins[i]);
+        }
+      }
+      this.plugins.list = plugins;
+    }
+
+    this.runPlugins('init', this);
+    this.emitter.emit('init', this);
+  }
+
+  public runPlugins(method: string, ...args): void {
+    for (const key of this.plugins.list) {
+      if (method in XaroForm.plugins[key]) {
+        XaroForm.plugins[key][method](this, ...args);
+      }
+    }
   }
 
 
@@ -163,13 +224,12 @@ export default class XaroForm implements I_XaroForm {
     }
 
     return {
-      success: !Object.keys(errors).length,
+      success: !keys(errors).length,
       errors,
     };
   }
 
-  protected parseRules() {
-    // name:required:minLength=^3^,email:required:email
+  protected parseRules(): Object {
     const validateProperty: string[] = this.config.client_validate.split(',');
 
     let fields: { [key: string]: string[] } = {};
@@ -212,43 +272,33 @@ export default class XaroForm implements I_XaroForm {
     return fieldValidators;
   }
 
-  submit() {
+  submit(): void {
+    this.lockBtns();
+
+    this.runPlugins('beforeSubmit', this);
+    this.emitter.emit('beforeSubmit', this);
+
     const validator = this.validate();
-    console.log(validator);
+    
+    // clear fields errors
+    for (const field_key in this.fields) {
+      this.fields[field_key].clearErrors();
+    }
+
+    // clear other errors
+    this.clearErrors();
 
     if (! validator.success) {
-      // without clearing errors
-      // for (const field_key in validator.errors) {
-      //   for (const error_code in validator.errors[field_key]) {
-      //     console.log(field_key, error_code);
-      //     this.fields[field_key].addError(error_code, validator.errors[field_key][error_code]);
-      //   }
-      // }
-      // for (const field_key in this.fields) {
-      //   const field = this.fields[field_key];
-      //   const fieldValidator = validator.errors[field_key];
-
-      //   if (! fieldValidator) {
-      //     field.clearErrors();
-      //     continue;
-      //   }
-      //   for (const error_code in field.errors) {
-      //     if (! Object.keys(fieldValidator).includes(error_code)) {
-      //       field.removeError(error_code);
-      //     }
-      //   }
-      // }
-
-      // with crear fields errors
-      for (const field_key in this.fields) {
-        this.fields[field_key].clearErrors();
-      }
       for (const field_key in validator.errors) {
         for (const error_code in validator.errors[field_key]) {
           this.fields[field_key].addError(error_code, validator.errors[field_key][error_code]);
         }
       }
 
+      this.unlockBtns();
+      // this, success, errors, side (client/server)
+      this.runPlugins('afterSubmit', this, validator.success, validator.errors, 'client');
+      this.emitter.emit('afterSubmit', this, validator.success, validator.errors, 'client');
       return;
     }
 
@@ -259,10 +309,101 @@ export default class XaroForm implements I_XaroForm {
       // },
       body: new FormData(this.config.el)
     })
-      .then(response => {
-        // console.log(response.text());
-        return response.json();
-      })
-      .then(data => console.log(data));
+    .then(response => {
+      // console.log(response.text());
+      return response.json();
+    })
+    .then(data => {
+      if (! data.success) {
+        // arrays of keys
+        const fields        = keys(this.fields);
+        const dataFields    = keys(data.errors);
+
+        // other errors
+        for (const key of difference(fields, dataFields)) {
+          for (const code in data.errors[key]) {
+            this.addError(key, code, data.errors[key][code]);
+          }
+        }
+
+        // fields errors
+        for (const key of intersection(dataFields, fields)) {
+          for (const code in data.errors[key]) {
+            this.fields[key].addError(code, data.errors[key][code]);
+          }
+        }
+      }
+      
+      this.runPlugins('afterSubmit', this, data.success, data.errors, 'server');
+      this.emitter.emit('afterSubmit', this, data.success, data.errors, 'server');
+    });
+  }
+
+  addError(key: string, code: string, msg: string, el?: HTMLElement): void {
+    if (keys(this.errors).includes(key) && keys(this.errors[key]).includes(code)) {
+      return;
+    }
+
+    this.errors[key] = this.errors[key] || {};
+    
+    if (this.errorsEl) {
+      if (! el) {
+        const $el = $().create<HTMLElement>({ content: msg }).addClass('x-form__error').attr({
+          'data-field-key':   key,
+          'data-error-code':  code,
+        });
+        
+        this.errorsEl.append($el[0]);
+        
+        nextTick(() => $el.addClass('x-form__error--show'));
+
+        el = $el[0];
+      }
+    }
+
+    this.errors[key][code] = {
+      msg,
+      el
+    }
+  }
+
+  removeError(key: string, code: string): void {
+    if (! keys(this.errors).includes(key) &&
+        ! keys(this.errors[key]).includes(code)) {
+      return;
+    }
+
+    this.errors[key][code].el?.remove();
+    delete this.errors[key][code];
+  }
+
+  clearErrors(): void {
+    // fields errors
+    for (const key in this.fields) {
+      this.fields[key].clearErrors();
+    }
+
+    // other errors
+    for (const key in this.errors) {
+      for (const code in this.errors[key]) {
+        this.removeError(key, code);
+      }
+    }
+  }
+
+  changeDisabledAttr(value: boolean): void {
+    for (const key in this.btns) {
+      for (const btn of this.btns[key]) {
+        btn.disabled = value;
+      }
+    }
+  }
+
+  lockBtns(): void {
+    this.changeDisabledAttr(true);
+  }
+
+  unlockBtns(): void {
+    this.changeDisabledAttr(false);
   }
 }

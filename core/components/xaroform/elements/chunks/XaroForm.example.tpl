@@ -1,21 +1,24 @@
-<form method="post" class="x-form" enctype="multipart/form-data">
-    {csrf_field()}
-    <input type="hidden" name="xaro_action" value="q">
+<form method="post" class="x-form test-form" enctype="multipart/form-data" action="assets/components/xaroform/action.php">
+    {*
+        *}
+        {csrf_field()}
+    <!-- <input type="hidden" name="xaro_action" value="q"> -->
+    <!-- <input type="hidden" name="g-recaptcha-response" id="g-recaptcha-response"> -->
     <div class="x-form__field">
         <label for="name">Имя:</label>
-        <input type="text" name="name" id="name" class="x-form__input x-form__input--text" value="{$modx->getPlaceholder('xf.name')}">
+        <input type="text" name="name" id="name" class="x-form__input x-form__input--text" value="{'xf.name' | placeholder}">
     </div>
     <div class="x-form__field">
         <label for="email">Email:</label>
-        <input type="text" name="email" id="email" class="x-form__input x-form__input--text" value="{$modx->getPlaceholder('xf.email')}">
+        <input type="text" name="email" id="email" class="x-form__input x-form__input--text" value="{'xf.email' | placeholder}">
     </div>
     <div class="x-form__field">
         <label for="password">Пароль:</label>
-        <input type="text" name="password" id="password" class="x-form__input x-form__input--text" value="{$modx->getPlaceholder('xf.password')}">
+        <input type="text" name="password" id="password" class="x-form__input x-form__input--text" value="{'xf.password' | placeholder}">
     </div>
     <div class="x-form__field">
         <label for="password_confirm">Подтвердите пароль:</label>
-        <input type="text" name="password_confirm" id="password_confirm" class="x-form__input x-form__input--text" value="{$modx->getPlaceholder('xf.password_confirm')}">
+        <input type="text" name="password_confirm" id="password_confirm" class="x-form__input x-form__input--text" value="{'xf.password_confirm' | placeholder}">
     </div>
     <div class="x-form__field">
         <input type="checkbox" name="policy" id="policy" class="x-form__input x-form__input--checkbox">
@@ -51,26 +54,9 @@
     <div class="x-form__btns">
         <input type="submit" class="x-form__btn x-form__btn-submit" value="Отправить" />
     </div>
-
-    <!-- <div class="test">
-        <input type="checkbox" name="checkbox-test" id="checkbox-test-0" value="0">
-        <label for="checkbox-test-0">checkbox-test-0</label><br>
-        <input type="checkbox" name="checkbox-test" id="checkbox-test-1" value="1">
-        <label for="checkbox-test-1">checkbox-test-1</label>
-        <hr>
-        <input type="radio" name="radio-test" id="radio-test-0" value="0">
-        <label for="radio-test-0">radio-test-0</label><br>
-        <input type="radio" name="radio-test" id="radio-test-1" value="1">
-        <label for="radio-test-1">radio-test-1</label>
-        <hr>
-        <label for="select-test"></label>
-        <select name="select-test" id="select-test">
-            <option value="">-- select --</option>
-            <option value="0">option 0</option>
-            <option value="1">option 1</option>
-        </select>
-        <hr>
-        <textarea name="textarea-test" id="textarea-test" cols="30" rows="10"></textarea>
-        <hr>
-    </div> -->
+    <input type="text" name="test"><br>
+    <input type="text" name="test2"><br>
+    <div class="x-form__errors">
+        
+    </div>
 </form>

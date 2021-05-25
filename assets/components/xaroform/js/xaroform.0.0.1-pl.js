@@ -28,6 +28,29 @@ var XaroForm = (function () {
         throw new TypeError(s ? "Object is not iterable." : "Symbol.iterator is not defined.");
     }
 
+    function __read(o, n) {
+        var m = typeof Symbol === "function" && o[Symbol.iterator];
+        if (!m) return o;
+        var i = m.call(o), r, ar = [], e;
+        try {
+            while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+        }
+        catch (error) { e = { error: error }; }
+        finally {
+            try {
+                if (r && !r.done && (m = i["return"])) m.call(i);
+            }
+            finally { if (e) throw e.error; }
+        }
+        return ar;
+    }
+
+    function __spreadArray(to, from) {
+        for (var i = 0, il = from.length, j = to.length; i < il; i++, j++)
+            to[j] = from[i];
+        return to;
+    }
+
     class EventEmitter {
         /**
          * Create Emitter
@@ -400,30 +423,41 @@ var XaroForm = (function () {
         return Validator;
     }());
 
-    // const inputTypes: string[] = [
-    //   // 'button',
-    //   // 'checkbox',
-    //   'color',
-    //   'date',
-    //   'datetime-local',
-    //   'email',
-    //   'file',
-    //   'hidden',
-    //   'image',
-    //   'month',
-    //   'number',
-    //   'password',
-    //   // 'radio',
-    //   'range',
-    //   // 'reset',
-    //   'search',
-    //   // 'submit',
-    //   'tel',
-    //   'text',
-    //   'time',
-    //   'url',
-    //   'week',
-    // ];
+    /**
+     * Convert string with camelCase to snake_case
+     * @param str string
+     * @returns string
+     * @example camelToSnake('isNumber') => 'is_number'
+     */
+    var camelToSnake = function (str) { return str.replace(/[A-Z]/g, function (char) { return '_' + char.toLowerCase(); }); };
+    /**
+     * Returns the intersection of two arrays.
+     * @example intersection([ 1, 3, 5 ], [ 1, 5, 7 ]) => [ 1, 5 ]
+     */
+    var intersection = function (first, second) {
+        return first.filter(function (x) { return second.includes(x); });
+    };
+    // console.log(intersectionMultiple(
+    //   [ 1, 3, 5, 7, 9, 11, 13],
+    //   [ 2, 3, 7, 11, 15],
+    //   // [ 5, 7, 10, 11, 17 ],
+    //   // [ 4, 6, 7, 11 ]
+    // ));
+    /**
+     * Returns the difference between the second array and the first
+     * @example difference([ 1, 3, 5 ], [ 1, 5, 9 ]) => [ 3 ];
+     * @example difference([ 1, 5, 9 ], [ 1, 3, 5 ]) => [ 9 ];
+     */
+    var difference = function (target, compare) {
+        return compare.filter(function (x) { return !target.includes(x); });
+    };
+    /**
+     * Alias for Object.keys()
+     * @param obj Object
+     * @returns string[]
+     */
+    var keys = function (obj) { return Object.keys(obj); };
+
     var Field = /** @class */ (function () {
         function Field(config) {
             this.errors = {};
@@ -443,50 +477,61 @@ var XaroForm = (function () {
             enumerable: false,
             configurable: true
         });
-        Field.prototype.addError = function (code, msg) {
-            if (!Object.keys(this.errors).includes(code)) {
-                this.errors[code] = _().create({ content: msg }).addClass('x-form__field-error')[0];
-                this.el.append(this.errors[code]);
+        Field.prototype.addError = function (code, msg, el) {
+            this.el.classList.add('x-form__field--error');
+            if (!keys(this.errors).includes(code + '')) {
+                if (!el) {
+                    var $el = _().create({ content: msg }).addClass('x-form__field-error');
+                    el = $el[0];
+                }
+                this.errors[code] = {
+                    msg: msg,
+                    el: el
+                };
+                this.el.append(this.errors[code].el);
+                nextTick(function () { return el.classList.add('x-form__field-error--show'); });
             }
         };
         Field.prototype.removeError = function (code) {
-            if (Object.keys(this.errors).includes(code)) {
-                this.errors[code].remove();
+            var _a;
+            if (keys(this.errors).includes(code)) {
+                (_a = this.errors[code].el) === null || _a === void 0 ? void 0 : _a.remove();
                 delete this.errors[code];
+            }
+            if (!keys(this.errors).length) {
+                this.el.classList.remove('x-form__field--error');
             }
         };
         Field.prototype.clearErrors = function () {
             for (var error_code in this.errors) {
                 this.removeError(error_code);
             }
+            this.el.classList.remove('x-form__field--error');
         };
         return Field;
     }());
 
-    var camelToSnake = function (str) { return str.replace(/[A-Z]/g, function (char) { return '_' + char.toLowerCase(); }); };
-
-    // const tmpValidatorMethods = [
-    //   'required',
-    //   'minLength',
-    //   'maxLength',
-    //   'password_confirm',
-    //   'isNumber',
-    //   'minValue',
-    //   'maxValue',
-    //   'email',
-    // ];
     var XaroForm = /** @class */ (function () {
         function XaroForm(config) {
-            var e_1, _a;
+            var e_1, _a, e_2, _b;
             var _this = this;
             // fields elements with inputs
             this.fields = {};
+            // form buttons element (submit/reset/etc)
+            this.btns = {};
+            // other errors object
             this.errors = {};
+            // plugins for current instance
+            this.plugins = {
+                list: [],
+                config: {}
+            };
             this.emitter = new EventEmitter(config.on);
             this.config = config;
             try {
-                for (var _b = __values(_(this.config.el).get('.x-form__field')), _c = _b.next(); !_c.done; _c = _b.next()) {
-                    var el = _c.value;
+                // Fields
+                for (var _c = __values(_(this.config.el).get('.x-form__field')), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var el = _d.value;
                     var inputs = _(el).get('.x-form__input');
                     if (!inputs.length) {
                         throw new Error("Field element has not contains input element/s");
@@ -507,72 +552,141 @@ var XaroForm = (function () {
             catch (e_1_1) { e_1 = { error: e_1_1 }; }
             finally {
                 try {
-                    if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
                 }
                 finally { if (e_1) throw e_1.error; }
             }
-            // console.log(this);
-            // initialize fields object property
-            // for (const input of $(this.config.el).get<HTMLInputElement>('.x-form__input')) {
-            //   const name: string | null = input.getAttribute('name');
-            //   if (name === null) {
-            //     continue;
-            //   }
-            //   let field: HTMLElement = input;
-            //   while (field.tagName !== 'FORM' && !field.classList.contains('x-form__field')) {
-            //     field = field.parentElement!;
-            //   }
-            //   if (field.tagName === 'FORM') {
-            //     continue;
-            //   }
-            //   // set field el data-field-name attr by input name attr
-            //   field.setAttribute('data-field-name', name);
-            //   // create errors container el and append to field el
-            //   const errors = document.createElement('div');
-            //   errors.classList.add('x-form__field-errors');
-            //   field.append(errors);
-            //   this.fields[name] = {
-            //     field,
-            //     input,
-            //     errors
-            //   };
-            // }
+            // Buttons (submit/reset/etc)
+            var btn_i = 0;
+            try {
+                for (var _e = __values(_(this.config.el).get('.x-form__btn')), _f = _e.next(); !_f.done; _f = _e.next()) {
+                    var btn = _f.value;
+                    var type = btn.getAttribute('type');
+                    if (type) {
+                        if (type in this.btns) {
+                            this.btns[type].push(btn);
+                        }
+                        else {
+                            this.btns[type] = [btn];
+                        }
+                    }
+                    else {
+                        this.btns['undefined_' + btn_i] = [btn];
+                        btn_i++;
+                    }
+                }
+            }
+            catch (e_2_1) { e_2 = { error: e_2_1 }; }
+            finally {
+                try {
+                    if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+                }
+                finally { if (e_2) throw e_2.error; }
+            }
+            this.lockBtns();
+            // Common errors wrapper el
+            var errorsEl = _(this.config.el).get('.x-form__errors');
+            this.errorsEl = errorsEl.length ? errorsEl[0] : undefined;
+            // Submit listener
             this.config.el.addEventListener('submit', function (e) {
                 e.preventDefault();
                 _this.submit();
                 return false;
             });
-        }
-        XaroForm.initialize = function (config) {
-            var e_2, _a;
-            XaroForm.config = config.common;
-            for (var key in config.forms) {
-                XaroForm.instances[key] = [];
-                var forms = _(config.forms[key]['form_selector'] + "[data-form-action=\"" + key + "\"]");
-                try {
-                    for (var forms_1 = (e_2 = void 0, __values(forms)), forms_1_1 = forms_1.next(); !forms_1_1.done; forms_1_1 = forms_1.next()) {
-                        var el = forms_1_1.value;
-                        XaroForm.instances[key].push(new XaroForm(Object.assign({}, config.forms[key], { el: el })));
+            // plugins
+            var pluginKeys = keys(XaroForm.plugins);
+            if (this.config.plugins) {
+                var plugins = [];
+                for (var i = 0; i < this.config.plugins.length; i++) {
+                    if (pluginKeys.includes(this.config.plugins[i])) {
+                        plugins.push(this.config.plugins[i]);
                     }
                 }
-                catch (e_2_1) { e_2 = { error: e_2_1 }; }
+                this.plugins.list = plugins;
+            }
+            this.runPlugins('init', this);
+            this.emitter.emit('init', this);
+        }
+        /**
+         * Registers plugin for XaroForm
+         * @param name string Plugin's name
+         * @param plugin XaroFormPlugin Plugin's object
+         */
+        XaroForm.addPlugin = function (name, plugin) {
+            XaroForm.plugins[name] = plugin;
+        };
+        /**
+         * Removes plugin by name
+         * @param name string Plugin's name
+         */
+        XaroForm.removePlugin = function (name) {
+            delete XaroForm.plugins[name];
+        };
+        /**
+         * Initialize all forms from config
+         * @param config I_XaroFormInitializeConfig
+         */
+        XaroForm.initialize = function (config) {
+            var e_3, _a;
+            XaroForm.config = config.common;
+            if (window.XaroFormPlugins) {
+                for (var key in window.XaroFormPlugins) {
+                    XaroForm.addPlugin(key, window.XaroFormPlugins[key]);
+                }
+            }
+            for (var key in config.forms) {
+                XaroForm.instances[key] = [];
+                var forms = _(config.forms[key]['form_selector'] + "[data-form-key=\"" + key + "\"]");
+                try {
+                    for (var forms_1 = (e_3 = void 0, __values(forms)), forms_1_1 = forms_1.next(); !forms_1_1.done; forms_1_1 = forms_1.next()) {
+                        var el = forms_1_1.value;
+                        XaroForm.instances[key].push(new XaroForm(Object.assign({}, config.forms[key], {
+                            el: el,
+                            on: window.XaroFormEvents || {}
+                        })));
+                        XaroForm.numbers++;
+                    }
+                }
+                catch (e_3_1) { e_3 = { error: e_3_1 }; }
                 finally {
                     try {
                         if (forms_1_1 && !forms_1_1.done && (_a = forms_1.return)) _a.call(forms_1);
                     }
-                    finally { if (e_2) throw e_2.error; }
+                    finally { if (e_3) throw e_3.error; }
                 }
             }
             // console.log(config, XaroForm.instances);
         };
+        XaroForm.prototype.runPlugins = function (method) {
+            var e_4, _a, _b;
+            var args = [];
+            for (var _i = 1; _i < arguments.length; _i++) {
+                args[_i - 1] = arguments[_i];
+            }
+            try {
+                for (var _c = __values(this.plugins.list), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var key = _d.value;
+                    if (method in XaroForm.plugins[key]) {
+                        (_b = XaroForm.plugins[key])[method].apply(_b, __spreadArray([this], __read(args)));
+                    }
+                }
+            }
+            catch (e_4_1) { e_4 = { error: e_4_1 }; }
+            finally {
+                try {
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                }
+                finally { if (e_4) throw e_4.error; }
+            }
+        };
         XaroForm.prototype.validate = function () {
-            var e_3, _a;
+            var e_5, _a;
             var rules = this.parseRules();
             // codes
             var codes = {};
             for (var field in rules) {
                 try {
-                    for (var _b = (e_3 = void 0, __values(rules[field])), _c = _b.next(); !_c.done; _c = _b.next()) {
+                    for (var _b = (e_5 = void 0, __values(rules[field])), _c = _b.next(); !_c.done; _c = _b.next()) {
                         var rule = _c.value;
                         var result = Validator[rule.method](this.fields[field], rule.value);
                         if (!result) {
@@ -583,12 +697,12 @@ var XaroForm = (function () {
                         }
                     }
                 }
-                catch (e_3_1) { e_3 = { error: e_3_1 }; }
+                catch (e_5_1) { e_5 = { error: e_5_1 }; }
                 finally {
                     try {
                         if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
                     }
-                    finally { if (e_3) throw e_3.error; }
+                    finally { if (e_5) throw e_5.error; }
                 }
             }
             // get text error
@@ -606,13 +720,12 @@ var XaroForm = (function () {
                 }
             }
             return {
-                success: !Object.keys(errors).length,
+                success: !keys(errors).length,
                 errors: errors,
             };
         };
         XaroForm.prototype.parseRules = function () {
-            var e_4, _a, e_5, _b;
-            // name:required:minLength=^3^,email:required:email
+            var e_6, _a, e_7, _b;
             var validateProperty = this.config.client_validate.split(',');
             var fields = {};
             try {
@@ -624,17 +737,17 @@ var XaroForm = (function () {
                     }
                 }
             }
-            catch (e_4_1) { e_4 = { error: e_4_1 }; }
+            catch (e_6_1) { e_6 = { error: e_6_1 }; }
             finally {
                 try {
                     if (validateProperty_1_1 && !validateProperty_1_1.done && (_a = validateProperty_1.return)) _a.call(validateProperty_1);
                 }
-                finally { if (e_4) throw e_4.error; }
+                finally { if (e_6) throw e_6.error; }
             }
             var fieldValidators = {};
             for (var key in fields) {
                 try {
-                    for (var _c = (e_5 = void 0, __values(fields[key])), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    for (var _c = (e_7 = void 0, __values(fields[key])), _d = _c.next(); !_d.done; _d = _c.next()) {
                         var v = _d.value;
                         var _v = v.split('=');
                         // if (tmpValidatorMethods.indexOf(_v[0]) === -1) {
@@ -652,49 +765,38 @@ var XaroForm = (function () {
                         });
                     }
                 }
-                catch (e_5_1) { e_5 = { error: e_5_1 }; }
+                catch (e_7_1) { e_7 = { error: e_7_1 }; }
                 finally {
                     try {
                         if (_d && !_d.done && (_b = _c.return)) _b.call(_c);
                     }
-                    finally { if (e_5) throw e_5.error; }
+                    finally { if (e_7) throw e_7.error; }
                 }
             }
             return fieldValidators;
         };
         XaroForm.prototype.submit = function () {
+            var _this = this;
+            this.lockBtns();
+            this.runPlugins('beforeSubmit', this);
+            this.emitter.emit('beforeSubmit', this);
             var validator = this.validate();
-            console.log(validator);
+            // clear fields errors
+            for (var field_key in this.fields) {
+                this.fields[field_key].clearErrors();
+            }
+            // clear other errors
+            this.clearErrors();
             if (!validator.success) {
-                // without clearing errors
-                // for (const field_key in validator.errors) {
-                //   for (const error_code in validator.errors[field_key]) {
-                //     console.log(field_key, error_code);
-                //     this.fields[field_key].addError(error_code, validator.errors[field_key][error_code]);
-                //   }
-                // }
-                // for (const field_key in this.fields) {
-                //   const field = this.fields[field_key];
-                //   const fieldValidator = validator.errors[field_key];
-                //   if (! fieldValidator) {
-                //     field.clearErrors();
-                //     continue;
-                //   }
-                //   for (const error_code in field.errors) {
-                //     if (! Object.keys(fieldValidator).includes(error_code)) {
-                //       field.removeError(error_code);
-                //     }
-                //   }
-                // }
-                // with crear fields errors
-                for (var field_key in this.fields) {
-                    this.fields[field_key].clearErrors();
-                }
                 for (var field_key in validator.errors) {
                     for (var error_code in validator.errors[field_key]) {
                         this.fields[field_key].addError(error_code, validator.errors[field_key][error_code]);
                     }
                 }
+                this.unlockBtns();
+                // this, success, errors, side (client/server)
+                this.runPlugins('afterSubmit', this, validator.success, validator.errors, 'client');
+                this.emitter.emit('afterSubmit', this, validator.success, validator.errors, 'client');
                 return;
             }
             fetch(this.config['action_url'], {
@@ -708,14 +810,127 @@ var XaroForm = (function () {
                 // console.log(response.text());
                 return response.json();
             })
-                .then(function (data) { return console.log(data); });
+                .then(function (data) {
+                var e_8, _a, e_9, _b;
+                if (!data.success) {
+                    // arrays of keys
+                    var fields = keys(_this.fields);
+                    var dataFields = keys(data.errors);
+                    try {
+                        // other errors
+                        for (var _c = __values(difference(fields, dataFields)), _d = _c.next(); !_d.done; _d = _c.next()) {
+                            var key = _d.value;
+                            for (var code in data.errors[key]) {
+                                _this.addError(key, code, data.errors[key][code]);
+                            }
+                        }
+                    }
+                    catch (e_8_1) { e_8 = { error: e_8_1 }; }
+                    finally {
+                        try {
+                            if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                        }
+                        finally { if (e_8) throw e_8.error; }
+                    }
+                    try {
+                        // fields errors
+                        for (var _e = __values(intersection(dataFields, fields)), _f = _e.next(); !_f.done; _f = _e.next()) {
+                            var key = _f.value;
+                            for (var code in data.errors[key]) {
+                                _this.fields[key].addError(code, data.errors[key][code]);
+                            }
+                        }
+                    }
+                    catch (e_9_1) { e_9 = { error: e_9_1 }; }
+                    finally {
+                        try {
+                            if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+                        }
+                        finally { if (e_9) throw e_9.error; }
+                    }
+                }
+                _this.runPlugins('afterSubmit', _this, data.success, data.errors, 'server');
+                _this.emitter.emit('afterSubmit', _this, data.success, data.errors, 'server');
+            });
         };
+        XaroForm.prototype.addError = function (key, code, msg, el) {
+            if (keys(this.errors).includes(key) && keys(this.errors[key]).includes(code)) {
+                return;
+            }
+            this.errors[key] = this.errors[key] || {};
+            if (this.errorsEl) {
+                if (!el) {
+                    var $el_1 = _().create({ content: msg }).addClass('x-form__error').attr({
+                        'data-field-key': key,
+                        'data-error-code': code,
+                    });
+                    this.errorsEl.append($el_1[0]);
+                    nextTick(function () { return $el_1.addClass('x-form__error--show'); });
+                    el = $el_1[0];
+                }
+            }
+            this.errors[key][code] = {
+                msg: msg,
+                el: el
+            };
+        };
+        XaroForm.prototype.removeError = function (key, code) {
+            var _a;
+            if (!keys(this.errors).includes(key) &&
+                !keys(this.errors[key]).includes(code)) {
+                return;
+            }
+            (_a = this.errors[key][code].el) === null || _a === void 0 ? void 0 : _a.remove();
+            delete this.errors[key][code];
+        };
+        XaroForm.prototype.clearErrors = function () {
+            // fields errors
+            for (var key in this.fields) {
+                this.fields[key].clearErrors();
+            }
+            // other errors
+            for (var key in this.errors) {
+                for (var code in this.errors[key]) {
+                    this.removeError(key, code);
+                }
+            }
+        };
+        XaroForm.prototype.changeDisabledAttr = function (value) {
+            var e_10, _a;
+            for (var key in this.btns) {
+                try {
+                    for (var _b = (e_10 = void 0, __values(this.btns[key])), _c = _b.next(); !_c.done; _c = _b.next()) {
+                        var btn = _c.value;
+                        btn.disabled = value;
+                    }
+                }
+                catch (e_10_1) { e_10 = { error: e_10_1 }; }
+                finally {
+                    try {
+                        if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                    }
+                    finally { if (e_10) throw e_10.error; }
+                }
+            }
+        };
+        XaroForm.prototype.lockBtns = function () {
+            this.changeDisabledAttr(true);
+        };
+        XaroForm.prototype.unlockBtns = function () {
+            this.changeDisabledAttr(false);
+        };
+        XaroForm.EventEmitter = EventEmitter;
+        XaroForm.MicroDOM = MicroDOM;
+        // object with all registered plugins
+        XaroForm.plugins = {};
         // all forms instances
         XaroForm.instances = {};
+        // forms amount
+        XaroForm.numbers = 0;
+        // custom validators
+        XaroForm.customValidators = {};
         return XaroForm;
     }());
-
-    window.Validator = Validator;
 
     return XaroForm;
 

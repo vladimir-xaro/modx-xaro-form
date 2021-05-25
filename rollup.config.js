@@ -5,11 +5,38 @@ import { nodeResolve } from '@rollup/plugin-node-resolve';
 import typescript from '@rollup/plugin-typescript';
 // import { deepmerge } from 'deepmerge';
 
-const XARO_ASSETS_PATH = 'assets/components/xaroform/';
-const XARO_FILENAME = 'xaroform';
-const XARO_VERSION = '0.0.1-pl';
+// import multiInput from 'rollup-plugin-multi-input';
 
-export default {
+const XARO_ASSETS_PATH      = 'assets/components/xaroform/';
+const XARO_FILENAME         = 'xaroform';
+const XARO_VERSION          = '0.0.1-pl';
+const XARO_PLUGINS_SRC_DIR  = 'src/js/plugins/';
+const XARO_PLUGINS_DIR      = `${XARO_ASSETS_PATH}js/plugins/`;
+const XARO_PLUGINS          = [ 'RecaptchaV3' ];
+
+let pluginsConfig = [];
+for (const plugin of XARO_PLUGINS) {
+  pluginsConfig.push({
+    input: `${XARO_PLUGINS_SRC_DIR}${plugin}.ts`,
+    output: {
+      sourcemap: true,
+      file: `${XARO_PLUGINS_DIR}${plugin}.js`,
+      format: 'iife',
+      name: plugin,
+    },
+    plugins: [
+      nodeResolve({
+        browser: true
+      }),
+      typescript({
+        target: 'es5'
+      })
+      // terser(),
+    ],
+  })
+}
+
+let config = [{
   input: 'src/index.ts',
   output: [{
     sourcemap: true,
@@ -38,4 +65,8 @@ export default {
     }),
     // terser(),
   ],
-}
+}];
+config.push(...pluginsConfig);
+
+
+export default config;

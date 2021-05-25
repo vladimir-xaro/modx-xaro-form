@@ -23,6 +23,7 @@ class Email {
     $this->modx = $hook->modx;
 
     $this->config = array_merge([
+      'field_key' => 'email',
       'to'        => $this->form->config['email_to'],
       'from'      => $this->form->config['email_from'],
       'subject'   => $this->form->config['email_subject'],

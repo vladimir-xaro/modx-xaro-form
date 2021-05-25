@@ -2,8 +2,6 @@
 
 namespace Xaro\Form;
 
-use DiDom\Document;
-use DiDom\Element;
 use xPDO;
 
 class Form {
@@ -13,15 +11,13 @@ class Form {
   const STORAGE_KEY = 'xaro/form';
   const STORAGE_PREFIX = 'form_';
 
-  // TODO: remove tg constants later
-  const TELEGRAM_BOT_TOKEN = '1583446965:AAEtFrraXYpBSc4kiHh-nSn_wk9cRPtfSx4';
-  const TELEGRAM_BOT_CHATS = '251358949';
-
   /** @var array $forms */
   public static $forms;
 
-  /** @var bool $isInit */
-  public static $isInit;
+  /** @var bool $is_init */
+  public static $is_init;
+
+  public static $common_js_config = [];
 
   /** @var \modX $modx */
   public $modx;
@@ -34,6 +30,12 @@ class Form {
 
   /** @var array $user_config */
   public $user_config;
+
+  /** @var array $custom_js_config */
+  public $custom_js_config = [];
+
+  /** @var array $hooks List with settings for all hooks */
+  public $hooks = [];
 
   /** @var Hooks $pre_hooks */
   public $pre_hooks;
@@ -53,6 +55,9 @@ class Form {
   /** @var array $errors */
   public $errors = [];
 
+  /** @var string $content */
+  public $content;
+
   function __construct(\modX & $modx, array $config = []) {
     $this->modx =& $modx;
     $this->user_config = $config;
@@ -70,9 +75,13 @@ class Form {
       //     'min_length' => 'Name must be greater than 3 symbols', // or function
       //   ]
       // ],
-      'storage' => $this->modx->getOption('xaroform_data_storage'),
 
-      'form_storage_key' => $this->modx->getOption('xaroform_data_form_storage_key'),
+      'storage' => $this->getOption('data_storage'),
+
+      // custom js config append to XaroFormConfig for initialize on client side
+      'custom_js_config' => [],
+
+      'form_storage_key' => $this->getOption('data_form_storage_key'),
       'chunk_storage_key' => 'xaro/chunk',
 
       'core_path' => $core_path,
@@ -84,6 +93,9 @@ class Form {
 
       'css_url' => $assets_url . 'css/' . $assets_filename . '.css',
       'js_url' => $assets_url . 'js/' . $assets_filename . '.js',
+      
+      // Adds XaroForm.initialize(window.XaroFormConfig); after js script
+      'auto_init' => true,
 
       'placeholder_prefix' => 'xf.',
 
@@ -95,8 +107,9 @@ class Form {
       'continue_on_post_hook_error'         => true,
       'hooks_error_tpl'                     => 'XaroForm.hooks.error.tpl',
       'snippet_hooks_prefix' => '',
+      'hooks_namespace' => '\Xaro\Form\Hooks',
 
-      'form_key'      => $this->generateFormKey($this->user_config),
+      'form_key'      => '',
       'action_key'    => 'xaro_action',
       'form_class'    => 'xaro-form',
       'form_selector' => 'form.xaro-form',
@@ -114,18 +127,22 @@ class Form {
       'hooks'               => '',
       'storage'             => 'cache',
       'validate'            => '',
+      'custom_validate'     => '',
       'client_validate'     => '',
-      'clientValidate'      => true,
+      // TODO: think about enable/disable client validation but change config key name
+      // 'clientValidate'      => true, 
       'form_tpl'            => 'XaroForm.example.tpl',
+
+      'plugins' => [],
 
       // Hooks part
       'telegram_msg_tpl'    => 'XaroForm.telegram.msg.example.tpl',
       'telegram_parse_mode' => 'MarkdownV2',
       // 'telegram_bot_token'  => $this->modx->getOption('telegram_bot_token', null, ''),
       // 'telegram_bot_chats'  => explode(',', preg_replace('/\s/', '', $modx->getOption('telegram_bot_chats', null, ''))),
-      'telegram_bot_token'  => self::TELEGRAM_BOT_TOKEN,
-      'telegram_bot_chats'  => self::TELEGRAM_BOT_CHATS,
-      'telegram_is_notify'  => $this->modx->getOption('telegram_is_notify', null, true),
+      'telegram_bot_token'  => '',
+      'telegram_bot_chats'  => '',
+      'telegram_is_notify'  => $this->getOption('telegram_is_notify', null, true),
     ], $config);
 
     $this->modx->addPackage('xaroform', $this->config['model_path']);
@@ -138,7 +155,18 @@ class Form {
     } else {
       $this->modx->lexicon->load($this->config['lexicons']);
     }
+  }
 
+  /**
+   * Adapter for $modx->getOption()
+   * @param string $key — The option key.
+   * @param mixed $default — An optional default value to return if no value is found.
+   * @param array $options — A set of options to override those from xPDO.
+   * @param bool $skipEmpty
+   * @return mixed
+   */
+  public function getOption(string $key, $default = null, $options = null, $skipEmpty = false) {
+    return $this->modx->getOption('xaroform_' . $key, $options, $default, $skipEmpty);
   }
 
   /**
@@ -146,49 +174,86 @@ class Form {
    * @return string
    */
   public function initialize() : string {
+    $this->config['form_key'] = $this->generateFormKey($this->user_config);
+
+    // TODO: optmize run time
+    // Save form settings in storage (cache/session) - currently only cache is available
     $this->save(
       $this->config['form_key'],
       $this->user_config,
       $this->config['form_storage_key'],
     );
 
-    if (!self::$isInit) {
-      $commonJsConfig = json_encode([
-        'lexicon' => [
-          'errors' => $this->modx->lexicon->fetch('xaroform_error_input_', true)
-        ],
-      ]);
-      $this->modx->regClientCSS($this->config['css_url']);
-      $this->modx->regClientScript($this->config['js_url']);
-      $this->modx->regClientStartupHTMLBlock("<script type=\"text/javascript\">window.XaroFormConfig = { common: $commonJsConfig, forms: {} };</script>");
-      self::$isInit = true;
-    }
+    // Loads hooks settings
+    $this->hooks = Hooks::getConfig($this, true);
 
-    $jsConfig = json_encode([
-      'action_url'      => $this->config['action_url'],
-      'form_selector'   => $this->config['form_selector'],
-      'action_key'      => $this->config['action_key'],
-      'form_key'        => $this->config['form_key'],
-      'client_validate' => $this->config['client_validate'],
-    ]);
+    // Loads and sets chunk content
+    /** @var \modChunk $chunk */
+    $chunk = $this->modx->getObject('modChunk', array(
+      'name' => $this->config['form_tpl']
+    ));
+    $this->content = $chunk->getContent();
 
-    $this->modx->regClientStartupHTMLBlock("<script type=\"text/javascript\">window.XaroFormConfig.forms['{$this->config['form_key']}'] = {$jsConfig};</script>");
-    $this->modx->regClientHTMLBlock("<script type=\"text/javascript\">XaroForm.initialize(window.XaroFormConfig);</script>");
-
-    // Load and run preHooks
+    // Runs pre hooks
     if (!$this->runHooks('pre') && !$this->config['continue_on_pre_hook_error']) {
       if (! $this->parser) {
         $this->loadParser();
       }
 
+      // Returns pre_hooks tpl error
       return $this->parser->getChunk($this->config['hooks_error_tpl'], [
-        'errors' => $this->pre_hooks->getErrors()
+        'errors' => $this->pre_hooks->getErrors(),
       ]);
     }
 
+    // Sets placeholders from pre_hooks
     $this->modx->setPlaceholders($this->pre_hooks->fields, $this->config['placeholder_prefix']);
 
-    return $this->getChunk();
+    // Loads js/css, sets common js config in XaroFormConfig.common
+    if (!self::$is_init) {
+      $common_js_config = json_encode(array_merge([
+        'lexicon' => [
+          'errors' => $this->modx->lexicon->fetch('xaroform_error_input_', true)
+        ],
+      ], self::$common_js_config));
+      $this->modx->regClientCSS($this->config['css_url']);
+      $this->modx->regClientScript($this->config['js_url']);
+      $this->modx->regClientStartupHTMLBlock("<script type=\"text/javascript\">window.XaroFormConfig = { common: $common_js_config, forms: {} };</script>");
+      self::$is_init = true;
+    }
+
+    $plugins = [];
+    if (gettype($this->config['plugins']) === 'array') {
+      $plugins = $this->config['plugins'];
+    } else {
+      $plugins = explode(',', $this->config['plugins']);
+    }
+    // Sets custom js form config in XaroFormConfig.forms[%this-form%]
+    $custom_js_config = $this->config['custom_js_config'];
+    $custom_js_config = gettype($custom_js_config) === 'array' ? $custom_js_config : json_decode($custom_js_config, true);
+    $custom_js_config = json_encode(array_merge([
+      'action_url'      => $this->config['action_url'],
+      'form_selector'   => $this->config['form_selector'],
+      'action_key'      => $this->config['action_key'],
+      'form_key'        => $this->config['form_key'],
+      'client_validate' => $this->config['client_validate'],
+      'plugins'         => $plugins,
+    ], $custom_js_config, $this->custom_js_config));
+    $this->modx->regClientStartupHTMLBlock("<script type=\"text/javascript\">window.XaroFormConfig.forms['{$this->config['form_key']}'] = {$custom_js_config};</script>");
+    if ($this->config['auto_init']) {
+      $this->modx->regClientHTMLBlock("<script type=\"text/javascript\">XaroForm.initialize(window.XaroFormConfig);</script>");
+    }
+
+    
+    if (! $this->parser) {
+      $this->loadParser();
+    }
+
+    $this->content = $this->parser->fenom($this->content);
+
+    $this->prepareForm();
+
+    return $this->content;
   }
 
   /**
@@ -209,25 +274,19 @@ class Form {
   }
 
   /**
-   * Loads pre-/post- Hooks class object by passing type argument
-   * @param string $type 'pre' or 'post'
-   * @return void
-   */
-  public function loadHooks(string $type) : void {
-    $property_name = $type . '_hooks';
-    $this->$property_name = new Hooks($this, [ 'type' => $type ]);
-  }
-
-  /**
    * @return bool
    */
   public function runHooks(string $type) : bool {
-    $this->loadHooks($type);
-
     $property_name = $type . '_hooks';
     
-    // return $this->$property_name->loadMultiple($this->config[$property_name]);
-    return $this->$property_name->loadMultiple($this->config[$property_name === 'post_hooks' ? 'hooks' : $property_name]);
+    if (! $this->$property_name) {
+      $this->$property_name = new Hooks($this, [
+        'type'  => $type,
+        'hooks' => $this->hooks[$type]
+      ]);
+    }
+
+    return $this->$property_name->runMultiple();
   }
 
   /**
@@ -238,7 +297,7 @@ class Form {
     $key = $this->request->input($this->config['action_key']);
 
     if (is_null($key)) {
-      $this->addError($this->config['action_key'], 'form_key_missing');
+      $this->addError($this->config['action_key'], 'form_key_missing', 'missing');
       $this->response([
         'success' => false,
         'errors'  => $this->getErrors(),
@@ -251,7 +310,7 @@ class Form {
     );
 
     if (! $loaded) {
-      $this->addError($this->config['action_key'], 'form_key_invalid');
+      $this->addError($this->config['action_key'], 'form_key_invalid', 'invalid');
       $this->response([
         'success' => false,
         'errors'  => $this->getErrors(),
@@ -259,6 +318,7 @@ class Form {
     }
 
     $this->config = array_merge($this->config, $loaded);
+    $this->config['form_key'] = $key;
   }
 
   /**
@@ -267,6 +327,8 @@ class Form {
   public function process() : void {
     $this->loadRequest();
     $this->loadConfig();
+
+    $this->hooks = Hooks::getConfig($this, true);
 
     // Load and run pre_validate_hooks
     if (!$this->runHooks('pre_validate') && !$this->config['continue_on_pre_validate_hook_error']) {
@@ -305,40 +367,71 @@ class Form {
     return md5(http_build_query($config));
   }
 
-  /**
-   * Returns chunk with form
-   * @return string
-   */
-  public function getChunk() : string {
-    if (! $this->parser) {
-      $this->loadParser();
+  protected function prepareForm() : void {
+    // $from_mem = memory_get_usage();
+    // $from_time = microtime(true);
+
+    // method attr
+    $pattern = '/<form(.*?)method=(?:"|\')(.*?)(?:"|\')/i';
+    if (preg_match($pattern, $this->content)) {
+      $this->content = preg_replace($pattern, '<form$1method="post"', $this->content);
+    } else {
+      $this->content = str_ireplace('<form', '<form method="post"', $this->content);
     }
 
-    $chunk = $this->parser->getChunk($this->config['form_tpl']);
-
-    $dom = new Document();
-    $dom->loadHtml($chunk, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-
-    // remove existing xaro_action inputs
-    foreach ($dom->find("[name=\"{$this->config['action_key']}\"]") as $x) {
-      $x->remove();
+    // action attr
+    $pattern = '/<form(.*?)action=(?:"|\')(.*?)(?:"|\')/i';
+    if (preg_match($pattern, $this->content)) {
+      $this->content = preg_replace($pattern, '<form$1action="' . $this->config['action_url'] . '"', $this->content);
+    } else {
+      $this->content = str_ireplace('<form', '<form method="post"', $this->content);
     }
 
-    $form = $dom->first('form');
+    // data-form-key attr
+    $pattern = '/<form(.*?)data-form-key=(?:"|\')(.*?)(?:"|\')/i';
+    if (preg_match($pattern, $this->content)) {
+      $this->content = preg_replace($pattern, "<form$1data-form-key=\"{$this->config['form_key']}\"", $this->content);
+    } else {
+      $this->content = str_ireplace('<form', "<form data-form-key=\"{$this->config['form_key']}\"", $this->content);
+    }
 
-    $element = new Element('input', null, [
-      'type'  => 'hidden',
-      'name'  => $this->config['action_key'],
-      'value' => $this->config['form_key']
-    ]);
-    $form->prependChild($element);
+    // adds class
+    $pattern = '/<form(.*?)class=(?:"|\')(.*?)(?:"|\')/i';
+    if (preg_match($pattern, $this->content, $matches)) {
+      if (stripos($matches[2], $this->config['form_class']) === false) {
+        $this->content = preg_replace($pattern, "<form$1class=\"{$this->config['form_class']} $2\"", $this->content);
+      }
+    } else {
+      $this->content = str_ireplace('<form', "<form class=\"{$this->config['form_class']}\"", $this->content);
+    }
 
-    $form->setAttribute('action', $this->config['action_url']);
-    $form->setAttribute('data-form-action', $this->config['form_key']);
-    $classes = implode(' ', $form->classes()->getAll());
-    $form->setAttribute('class', $this->config['form_class'] . ' ' . $classes);
+    // action_key input
+    $action = "<input type=\"hidden\" name=\"{$this->config['action_key']}\" value=\"{$this->config['form_key']}\" />";
+    if ((stripos($this->content, '</form>') !== false)) {
+      if (preg_match('/<input.*?name=(?:"|\')' . $this->config['action_key'] . '(?:"|\').*?>/i', $this->content, $matches)) {
+        $this->content = str_ireplace($matches[0], '', $this->content);
+      }
+      $this->content = str_ireplace('</form>', "\n\t$action\n</form>", $this->content);
+    }
 
-    return $dom->html();
+    // $to_time = microtime(true);
+    // $to_mem = memory_get_usage();
+
+    // $total_time = $to_time - $from_time;
+    // $total_mem = $to_mem - $from_mem;
+
+    // $debug_time = [
+    //   'time_from'  => $from_time,
+    //   'time_to'    => $to_time,
+    //   'time_total' => $total_time,
+    // ];
+    // $debug_mem = [
+    //   'mem_from'  => $from_mem,
+    //   'mem_to'    => $to_mem,
+    //   'mem_total' => $total_mem,
+    // ];
+
+    // dd($this->content, $debug_time, $debug_mem);
   }
 
   /**
@@ -349,7 +442,7 @@ class Form {
    * @param string|null $storage      Storage type
    * @return bool
    */
-  protected function save(string $key, $data, string $storage_key, $storage = null) : bool {
+  public function save(string $key, $data, string $storage_key, $storage = null) : bool {
     if (is_null($storage) || $storage === 'cache') {
       cache([
         $key => $data,
@@ -372,7 +465,7 @@ class Form {
    * @param string|null $storage      Storage type
    * @return mixed
    */
-  protected function load(string $key, string $storage_key, $storage = null) {
+  public function load(string $key, string $storage_key, $storage = null) {
     if (is_null($storage) || $storage === 'cache') {
       return cache($key, [
         xPDO::OPT_CACHE_KEY => $storage_key
@@ -413,8 +506,8 @@ class Form {
    * @param string $msg
    * @return void
    */
-  public function addError(string $key, string $code) : void {
-    $this->errors[$key][] = $this->modx->lexicon('xaroform_error_' . $code);
+  public function addError(string $key, string $code, string $public_key = null) : void {
+    $this->errors[$key][$public_key ?: $code] = $this->modx->lexicon('xaroform_error_' . $code);
   }
 
   /**
@@ -431,6 +524,35 @@ class Form {
    */
   public function getErrors() : array {
     return $this->errors;
+  }
+
+  /**
+   * Adds config for sets window.XaroFormConfig.forms[%this-form%]
+   */
+  public function addJSConfig(array $config = []) : void {
+    $this->custom_js_config = array_merge($this->custom_js_config, $config);
+  }
+
+  /**
+   * Adds config for sets window.XaroFormConfig.common
+   */
+  public static function setInitializeConfig(array $config = []): void
+  {
+    self::$common_js_config = array_merge(self::$common_js_config, $config);
+  }
+
+  public function mergeConfig(string $prefix, array $config_default, array $config): array
+  {
+    $arr = [];
+    foreach ($config_default as $key => $value) {
+      if (is_int($key)) {
+        $arr[$value] = $this->config[$prefix . '_' . $value] ?: $this->getOption($prefix . '_' . $value);
+      } else {
+        $arr[$key] = $value;
+      }
+    }
+
+    return array_merge($arr, $config);
   }
 
   public static function dd(string $func, string $file, string $line, string $msg) {

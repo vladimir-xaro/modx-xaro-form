@@ -2,6 +2,7 @@
 
 namespace Xaro\Form\Hooks;
 
+use Xaro\Form\Form;
 use Xaro\Form\Hooks;
 
 class Telegram {
@@ -23,11 +24,12 @@ class Telegram {
     $this->modx = $hook->modx;
 
     $this->config = array_merge([
-      'msg_tpl'     => $this->form->config['telegram_msg_tpl'],
-      'parse_mode'  => $this->form->config['telegram_parse_mode'],
-      'bot_token'   => $this->form->config['telegram_bot_token'],
-      'bot_chats'   => $this->form->config['telegram_bot_chats'],
-      'is_notify'   => $this->form->config['telegram_is_notify'],
+      'field_key'   => 'telegram',
+      'msg_tpl'     => $this->form->config['telegram_msg_tpl']    ?: $this->form->getOption('telegram_msg_tpl'),
+      'parse_mode'  => $this->form->config['telegram_parse_mode'] ?: $this->form->getOption('telegram_parse_mode'),
+      'bot_token'   => $this->form->config['telegram_bot_token']  ?: $this->form->getOption('telegram_bot_token'),
+      'bot_chats'   => $this->form->config['telegram_bot_chats']  ?: $this->form->getOption('telegram_bot_chats'),
+      'is_on'       => $this->form->config['telegram_is_on']      ?: $this->form->getOption('telegram_is_on'),
     ], $config);
   }
 
@@ -51,8 +53,8 @@ class Telegram {
       if ($msg_response['ok']) {
         $msg_successed++;
       } else {
-        // TODO: change for a manager error
-        $this->hook->addError($this->config['name'], "[Telegram] Failed to send message. Error data:\n" . var_export($msg_response, true));
+        $this->hook->addManagerError("[Telegram] Failed to send message. Error data:\n" . var_export($msg_response, true));
+        // $this->hook->addError($this->config['field_key'], 'message', "[Telegram] Failed to send message. Error data:\n" . var_export($msg_response, true));
       }
     }
 
@@ -65,8 +67,8 @@ class Telegram {
         if ($doc_response['ok']) {
           $doc_successed++;
         } else {
-          // TODO: change for a manager error
-          $this->hook->addError($this->config['name'], "[Telegram] Failed to send document. Error data:\n" . var_export($doc_response, true));
+          $this->hook->addManagerError("[Telegram] Failed to send document. Error data:\n" . var_export($doc_response, true));
+          // $this->hook->addError($this->config['field_key'], 'document', "[Telegram] Failed to send document. Error data:\n" . var_export($doc_response, true));
         }
       }
     }
@@ -79,20 +81,11 @@ class Telegram {
    * @return string
    */
   public function sendMessage(string $id, string $text) : array {
-    $ch = curl_init("https://api.telegram.org/bot{$this->config['bot_token']}/sendMessage");
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, ([
+    return $this->sendRequest('sendMessage', [
       'parse_mode'  => $this->config['parse_mode'],
       'chat_id'     => (int)$id,
       'text'        => $text,
-    ]));
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    return json_decode($response, true);
+    ]);
   }
 
   /**
@@ -102,15 +95,19 @@ class Telegram {
   public function sendDocument(string $id, string $file) : array {
     $file = new \CURLFile($file->getRealPath());
 
-    $ch = curl_init("https://api.telegram.org/bot{$this->config['bot_token']}/sendDocument");
+    return $this->sendRequest('sendDocument', [
+      'chat_id'     => (int)$id,
+      'document'    => $file,
+      'caption'     => '# CAPTION #'
+    ]);
+  }
+
+  public function sendRequest(string $method, array $content) {
+    $ch = curl_init("https://api.telegram.org/bot{$this->config['bot_token']}/$method");
     curl_setopt($ch, CURLOPT_HEADER, false);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, ([
-      'chat_id'     => $id,
-      'document'    => $file,
-      'caption'     => '# CAPTION #'
-    ]));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $content);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $response = curl_exec($ch);
     curl_close($ch);

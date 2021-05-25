@@ -31,8 +31,8 @@ class Validator {
    * Returns validation rules for fields
    * @return array
    */
-  public function parseRules() : array {
-    $validateProperty = $this->form->config['validate'];
+  public function parseRules(bool $isSnippet = false) : array {
+    $validateProperty = $this->form->config[$isSnippet ? 'custom_validate' : 'validate'];
 
     $validateProperty = explode(',', $validateProperty);
 
@@ -48,11 +48,15 @@ class Validator {
     foreach ($fields as $key => $item) {
       foreach ($item as $v) {
         $v = explode('=', $v);
-
-        if (! method_exists($this, $v[0])) {
-          continue;
+        if ($isSnippet) {
+          if (! $this->modx->getObject('modSnippet', [ 'name' => $v[0] ])) {
+            continue;
+          }
+        } else {
+          if (! method_exists($this, $v[0])) {
+            continue;
+          }
         }
-
         $fieldValidators[$key][array_shift($v)] = trim($v[0], '^');
       }
     }
@@ -67,11 +71,24 @@ class Validator {
    * @return array
    */
   public function validate() : bool {
+    // validate config
     $rules = $this->parseRules();
-
     foreach ($rules as $field => $fieldRules) {
       foreach ($fieldRules as $method => $value) {
         $this->$method($field, $value);
+      }
+    }
+
+    // custom_validate config
+    $customRules = $this->parseRules(true);
+    foreach ($customRules as $field => $fieldRules) {
+      foreach ($fieldRules as $snippet => $value) {
+        $this->modx->runSnippet($snippet, [
+          'validator' => $this,
+          'field'     => $field,
+          'request'   => $this->request,
+          'ruleValue' => $value,
+        ]);
       }
     }
 
@@ -101,19 +118,31 @@ class Validator {
   }
 
   /**
-   * Adds error to field by key
+   * Adds error msg to field by lexicon code
    * @param string $key
-   * @param string $msg
+   * @param string $code
+   * @param array $placeholders ([string, string] or [string[], string[]] - see str_replace docs)
    * @return void
    */
-  public function addError(string $key, string $code, array $placeholders = []) : void {
+  public function addErrorByCode(string $key, string $code, array $placeholders = []) : void {
     $msg = $this->modx->lexicon('xaroform_error_input_' . $code);
 
+    $this->addError($key, $code, $msg, $placeholders);
+  }
+
+  /**
+   * Adds error msg to field
+   * @param string $key
+   * @param string $msg
+   * @param array $placeholders ([string, string] or [string[], string[]] - see str_replace docs)
+   * @return void
+   */
+  public function addError(string $key, string $code, string $msg, array $placeholders = []) : void {
     if (! empty($placeholders)) {
       $msg = str_replace($placeholders[0], $placeholders[1], $msg);
     }
 
-    $this->errors[$key][] = $msg;
+    $this->errors[$key][$code] = $msg;
   }
 
   public function getErrorMsg(string $field, string $rule, string $value) : string {
@@ -134,7 +163,7 @@ class Validator {
 
   public function required(string $field) : bool {
     if (empty($this->request->input($field))) {
-      $this->addError($field, 'required');
+      $this->addErrorByCode($field, 'required');
       return false;
     }
 
@@ -143,7 +172,7 @@ class Validator {
 
   public function minLength(string $field, string $value) : bool {
     if (mb_strlen($this->request->input($field)) < $value) {
-      $this->addError($field, 'min_length', [ '$', $value ]);
+      $this->addErrorByCode($field, 'min_length', [ '$', $value ]);
       return false;
     }
 
@@ -152,7 +181,7 @@ class Validator {
 
   public function maxLength(string $field, string $value) : bool {
     if (mb_strlen($this->request->input($field)) > $value) {
-      $this->addError($field, 'max_length', [ '$', $value ]);
+      $this->addErrorByCode($field, 'max_length', [ '$', $value ]);
       return false;
     }
 
@@ -163,7 +192,7 @@ class Validator {
     $confirm_input = $this->request->input($confirm_field);
 
     if ($this->request->input($field) !== $confirm_input) {
-      $this->addError($field, 'password_confirm');
+      $this->addErrorByCode($field, 'password_confirm');
       return false;
     }
 
@@ -175,7 +204,7 @@ class Validator {
     $input = str_replace(',', '.', $this->request->input($field));
 
     if (!is_numeric($input)) {
-      $this->addError($field, 'is_number');
+      $this->addErrorByCode($field, 'is_number');
       return false;
     }
 
@@ -187,7 +216,7 @@ class Validator {
     $value = floatval($value);
 
     if ($input < $value) {
-      $this->addError($field, 'min_value');
+      $this->addErrorByCode($field, 'min_value');
       return false;
     }
 
@@ -199,7 +228,7 @@ class Validator {
     $value = floatval($value);
 
     if ($input > $value) {
-      $this->addError($field, 'max_value');
+      $this->addErrorByCode($field, 'max_value');
       return false;
     }
 
@@ -227,7 +256,7 @@ class Validator {
 
   public function email(string $field) : bool {
     if (!preg_match('/^[a-zA-Zа-яА-Яё\d][a-zA-Zа-яА-ЯёЁ\d\.\-_]*[a-zA-Zа-яА-ЯёЁ\d]\@[a-zA-Zа-яА-ЯёЁ\d]([a-zA-Zа-яА-ЯёЁ\d\-]|\.)+[a-zA-Zа-яА-ЯёЁ\d]{2,}$/', $this->request->input($field))) {
-      $this->addError($field, 'email');
+      $this->addErrorByCode($field, 'email');
       return false;
     }
 

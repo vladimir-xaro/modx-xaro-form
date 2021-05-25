@@ -16,6 +16,24 @@ body {
     color: red; }
   .x-form__field--success {
     color: green; }
+  .x-form__field-error {
+    display: block;
+    opacity: 0;
+    transition-duration: 750ms;
+    transform: translateX(-50px); }
+    .x-form__field-error--show {
+      opacity: 1;
+      transform: translateX(0); }
+
+.x-form__error {
+  display: block;
+  opacity: 0;
+  transition-duration: 750ms;
+  color: red;
+  transform: translateX(-50px); }
+  .x-form__error--show {
+    opacity: 1;
+    transform: translateX(0); }
 
 .x-form__input--text {
   width: 100%;

@@ -15,22 +15,22 @@ return [
 
 
     // Google Recaptcha
-    'recaptcha_is_on' => [
+    'recaptcha_v3_is_on' => [
         'xtype' => 'combo-boolean',
-        'value' => false,
+        'value' => true,
         'area' => 'xaroform_recaptcha',
     ],
-    'recaptcha_secret' => [
+    'recaptcha_v3_secret_key' => [
         'xtype' => 'textfield',
         'value' => '',
         'area' => 'xaroform_recaptcha',
     ],
-    'recaptcha_public' => [
+    'recaptcha_v3_site_key' => [
         'xtype' => 'textfield',
         'value' => '',
         'area' => 'xaroform_recaptcha',
     ],
-    'recaptcha_min_score' => [
+    'recaptcha_v3_min_score' => [
         'xtype' => 'numberfield',
         'value' => 0,
         'area' => 'xaroform_recaptcha',
